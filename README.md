@@ -1,6 +1,6 @@
 # TODO List Application
 
-A client-side TODO list application built with **Quasar v2** (Vue 3), **TypeScript**, **Pinia**, and **Cypress**.
+A TODO list application built with **Quasar v2** (Vue 3), **TypeScript**, **Pinia**, and **Cypress**, backed by a [Serverless REST API](https://github.com/ianaquino47/todo-api) with DynamoDB persistence.
 
 ## Features
 
@@ -10,7 +10,8 @@ A client-side TODO list application built with **Quasar v2** (Vue 3), **TypeScri
 - **Delete** TODOs with the delete button
 - **Filter** by All / Active / Completed
 - **Clear completed** TODOs in one click
-- **Persistent storage** — TODOs survive page reloads via localStorage
+- **API-backed persistence** — TODOs are stored in DynamoDB via the todo-api, surviving page reloads and across devices
+- **Optimistic updates** — UI updates instantly, reverts automatically on API failure
 
 ## Tech Stack
 
@@ -21,6 +22,7 @@ A client-side TODO list application built with **Quasar v2** (Vue 3), **TypeScri
 | State | [Pinia](https://pinia.vuejs.org/) |
 | Language | TypeScript |
 | i18n | [vue-i18n](https://vue-i18n.intlify.dev/) (en-GB) |
+| API | [todo-api](https://github.com/ianaquino47/todo-api) (Serverless + DynamoDB) |
 | Unit/Component Tests | [Vitest](https://vitest.dev/) + [@vue/test-utils](https://test-utils.vuejs.org/) |
 | E2E Tests | [Cypress](https://www.cypress.io/) |
 
@@ -35,9 +37,10 @@ src/
 ├── domain/             # ITodo interface, TodoFilter enum
 ├── i18n/en-GB/         # Translation keys
 ├── layouts/            # MainLayout (header + page container)
-├── pages/              # IndexPage (composes all components)
+├── pages/              # IndexPage (composes all components, loads todos on mount)
 ├── router/             # Vue Router config
-└── stores/             # Pinia todo store
+├── services/           # API client (todoApi.ts)
+└── stores/             # Pinia todo store (API-backed with optimistic updates)
     └── __tests__/      # Store unit tests (Vitest)
 
 test/cypress/
@@ -51,6 +54,7 @@ test/cypress/
 
 - **Node.js** v20+
 - **npm** v10+
+- **todo-api** deployed (see [todo-api README](https://github.com/ianaquino47/todo-api))
 
 ### Install
 
@@ -64,7 +68,7 @@ npm install
 npx quasar dev
 ```
 
-Opens at [http://localhost:9000](http://localhost:9000).
+Opens at [http://localhost:9000](http://localhost:9000). Todos are loaded from the API on page load.
 
 ### Build for Production
 
@@ -74,6 +78,21 @@ npx quasar build
 
 Output is in `dist/spa/`.
 
+## Data Flow
+
+```
+User action → Pinia store (optimistic update) → API call (background)
+                                                      │
+                                               ┌──────┴──────┐
+                                               │  Success     │  Failure
+                                               │  (no-op)     │  (revert local state,
+                                               └──────────────┘   set error message)
+```
+
+1. **On mount**: `IndexPage` calls `store.loadTodos()` to fetch all todos from the API
+2. **On mutation**: The store optimistically updates local state, then fires the API call in the background
+3. **On failure**: Local state is reverted to its previous value and `store.error` is set
+
 ## Testing
 
 ### Unit & Component Tests
@@ -82,9 +101,9 @@ Output is in `dist/spa/`.
 npm run test:unit
 ```
 
-Runs 56 tests across 5 test suites covering:
+Runs 63 tests across 5 test suites covering:
 
-- **Store** (22 tests) — all actions, getters, localStorage persistence
+- **Store** (29 tests) — all actions, computed properties, API integration, optimistic updates, error revert
 - **TodoInput** (7 tests) — add via Enter/button, trim, empty validation
 - **TodoItem** (13 tests) — toggle, delete, inline edit, escape cancel, completed styling
 - **TodoFilters** (8 tests) — filter buttons, clear completed, remaining count
@@ -123,6 +142,12 @@ All user-facing strings use vue-i18n with the `en-GB` locale. Translation keys a
 - `UI.Actions.*` — button labels
 - `UI.Information.*` — empty states, status messages
 - `UI.Errors.*` — validation messages
+
+## Related Repositories
+
+| Repository | Description |
+|------------|-------------|
+| [todo-api](https://github.com/ianaquino47/todo-api) | Serverless REST API with DynamoDB persistence |
 
 ## Licence
 
