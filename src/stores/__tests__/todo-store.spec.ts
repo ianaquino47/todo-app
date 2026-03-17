@@ -2,12 +2,55 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { setActivePinia, createPinia } from 'pinia';
 import { useTodoStore } from 'src/stores/todo-store';
 import { TodoFilter } from 'src/domain/todo';
+import type { ITodo } from 'src/domain/todo';
+import * as todoApi from 'src/services/todoApi';
+
+vi.mock('src/services/todoApi', () => ({
+  fetchTodos: vi.fn().mockResolvedValue([]),
+  createTodo: vi.fn().mockResolvedValue({}),
+  updateTodo: vi.fn().mockResolvedValue({}),
+  deleteTodo: vi.fn().mockResolvedValue(undefined),
+}));
+
+const mockedApi = vi.mocked(todoApi);
 
 describe('useTodoStore', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
-    localStorage.clear();
-    vi.restoreAllMocks();
+    vi.clearAllMocks();
+    mockedApi.fetchTodos.mockResolvedValue([]);
+    mockedApi.createTodo.mockImplementation((todo: ITodo) => Promise.resolve(todo));
+    mockedApi.updateTodo.mockImplementation((_id: string, fields) =>
+      Promise.resolve({ id: _id, title: 'Updated', completed: false, createdAt: '', ...fields }),
+    );
+    mockedApi.deleteTodo.mockResolvedValue(undefined);
+  });
+
+  describe('loadTodos', () => {
+    it('should load todos from the API', async () => {
+      const apiTodos: ITodo[] = [
+        { id: '1', title: 'From API', completed: false, createdAt: '2026-03-17T00:00:00.000Z' },
+      ];
+      mockedApi.fetchTodos.mockResolvedValue(apiTodos);
+      const store = useTodoStore();
+
+      await store.loadTodos();
+
+      expect(store.todos).toHaveLength(1);
+      expect(store.todos[0].title).toBe('From API');
+      expect(store.loading).toBe(false);
+    });
+
+    it('should set error when the API call fails', async () => {
+      mockedApi.fetchTodos.mockRejectedValue(new Error('Network error'));
+      const store = useTodoStore();
+
+      await store.loadTodos();
+
+      expect(store.todos).toHaveLength(0);
+      expect(store.error).toBe('Network error');
+      expect(store.loading).toBe(false);
+    });
   });
 
   describe('addTodo', () => {
@@ -25,6 +68,16 @@ describe('useTodoStore', () => {
       );
       expect(store.todos[0].id).toBeDefined();
       expect(store.todos[0].createdAt).toBeDefined();
+    });
+
+    it('should call the API to create the todo', () => {
+      const store = useTodoStore();
+
+      store.addTodo('Buy groceries');
+
+      expect(mockedApi.createTodo).toHaveBeenCalledWith(
+        expect.objectContaining({ title: 'Buy groceries' }),
+      );
     });
 
     it('should generate unique IDs when adding multiple todos', () => {
@@ -52,6 +105,22 @@ describe('useTodoStore', () => {
 
       expect(store.todos).toHaveLength(0);
     });
+
+    it('should revert the todo when the API call fails', async () => {
+      mockedApi.createTodo.mockRejectedValue(new Error('API error'));
+      const store = useTodoStore();
+
+      store.addTodo('Will fail');
+
+      // Optimistically added
+      expect(store.todos).toHaveLength(1);
+
+      // Wait for the rejection to be handled
+      await vi.waitFor(() => {
+        expect(store.todos).toHaveLength(0);
+      });
+      expect(store.error).toBe('API error');
+    });
   });
 
   describe('updateTodo', () => {
@@ -63,6 +132,16 @@ describe('useTodoStore', () => {
       store.updateTodo(id, 'Updated title');
 
       expect(store.todos[0].title).toBe('Updated title');
+    });
+
+    it('should call the API to update the todo', () => {
+      const store = useTodoStore();
+      store.addTodo('Original');
+      const id = store.todos[0].id;
+
+      store.updateTodo(id, 'Updated');
+
+      expect(mockedApi.updateTodo).toHaveBeenCalledWith(id, { title: 'Updated' });
     });
 
     it('should not mutate the original todo object when updating', () => {
@@ -86,6 +165,21 @@ describe('useTodoStore', () => {
 
       expect(store.todos[0].title).toBe('Existing');
     });
+
+    it('should revert when the API call fails', async () => {
+      mockedApi.updateTodo.mockRejectedValue(new Error('API error'));
+      const store = useTodoStore();
+      store.addTodo('Original');
+      const id = store.todos[0].id;
+
+      store.updateTodo(id, 'Will fail');
+
+      expect(store.todos[0].title).toBe('Will fail');
+
+      await vi.waitFor(() => {
+        expect(store.todos[0].title).toBe('Original');
+      });
+    });
   });
 
   describe('toggleTodo', () => {
@@ -97,6 +191,16 @@ describe('useTodoStore', () => {
       store.toggleTodo(id);
 
       expect(store.todos[0].completed).toBe(true);
+    });
+
+    it('should call the API to update completed status', () => {
+      const store = useTodoStore();
+      store.addTodo('Test');
+      const id = store.todos[0].id;
+
+      store.toggleTodo(id);
+
+      expect(mockedApi.updateTodo).toHaveBeenCalledWith(id, { completed: true });
     });
 
     it('should toggle completed back to false when a todo is completed', () => {
@@ -133,6 +237,16 @@ describe('useTodoStore', () => {
       expect(store.todos).toHaveLength(0);
     });
 
+    it('should call the API to delete the todo', () => {
+      const store = useTodoStore();
+      store.addTodo('To remove');
+      const id = store.todos[0].id;
+
+      store.removeTodo(id);
+
+      expect(mockedApi.deleteTodo).toHaveBeenCalledWith(id);
+    });
+
     it('should only remove the targeted todo when multiple exist', () => {
       const store = useTodoStore();
       store.addTodo('Keep');
@@ -143,6 +257,21 @@ describe('useTodoStore', () => {
 
       expect(store.todos).toHaveLength(1);
       expect(store.todos[0].title).toBe('Keep');
+    });
+
+    it('should revert when the API call fails', async () => {
+      mockedApi.deleteTodo.mockRejectedValue(new Error('API error'));
+      const store = useTodoStore();
+      store.addTodo('Will revert');
+      const id = store.todos[0].id;
+
+      store.removeTodo(id);
+
+      expect(store.todos).toHaveLength(0);
+
+      await vi.waitFor(() => {
+        expect(store.todos).toHaveLength(1);
+      });
     });
   });
 
@@ -231,30 +360,6 @@ describe('useTodoStore', () => {
       store.toggleTodo(store.todos[0].id);
 
       expect(store.remainingCount).toBe(0);
-    });
-  });
-
-  describe('localStorage persistence', () => {
-    it('should persist todos to localStorage when a todo is added', () => {
-      const store = useTodoStore();
-
-      store.addTodo('Persisted');
-
-      const stored = JSON.parse(localStorage.getItem('todos') ?? '[]');
-      expect(stored).toHaveLength(1);
-      expect(stored[0].title).toBe('Persisted');
-    });
-
-    it('should hydrate todos from localStorage on initialisation', () => {
-      const existingTodos = [
-        { id: '1', title: 'Hydrated', completed: false, createdAt: new Date().toISOString() },
-      ];
-      localStorage.setItem('todos', JSON.stringify(existingTodos));
-
-      const store = useTodoStore();
-
-      expect(store.todos).toHaveLength(1);
-      expect(store.todos[0].title).toBe('Hydrated');
     });
   });
 });

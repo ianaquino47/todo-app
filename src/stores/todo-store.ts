@@ -2,26 +2,13 @@ import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import type { ITodo } from 'src/domain/todo';
 import { TodoFilter } from 'src/domain/todo';
-
-const STORAGE_KEY = 'todos';
-const API_URL = 'https://3nio1igy4g.execute-api.eu-west-2.amazonaws.com';
-
-function loadFromLocalStorage(): ITodo[] {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    return stored ? JSON.parse(stored) : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveToLocalStorage(todos: ITodo[]): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(todos));
-}
+import * as todoApi from 'src/services/todoApi';
 
 export const useTodoStore = defineStore('todo', () => {
-  const todos = ref<ITodo[]>(loadFromLocalStorage());
+  const todos = ref<ITodo[]>([]);
   const filter = ref<TodoFilter>(TodoFilter.All);
+  const loading = ref<boolean>(false);
+  const error = ref<string | null>(null);
 
   const filteredTodos = computed<ITodo[]>(() => {
     switch (filter.value) {
@@ -38,6 +25,18 @@ export const useTodoStore = defineStore('todo', () => {
     () => todos.value.filter((todo) => !todo.completed).length,
   );
 
+  async function loadTodos(): Promise<void> {
+    loading.value = true;
+    error.value = null;
+    try {
+      todos.value = await todoApi.fetchTodos();
+    } catch (err: unknown) {
+      error.value = err instanceof Error ? err.message : 'Failed to load todos';
+    } finally {
+      loading.value = false;
+    }
+  }
+
   function addTodo(title: string): void {
     const trimmedTitle = title.trim();
     if (!trimmedTitle) return;
@@ -49,41 +48,73 @@ export const useTodoStore = defineStore('todo', () => {
       createdAt: new Date().toISOString(),
     };
 
+    // Optimistic update
     todos.value = [...todos.value, newTodo];
-    saveToLocalStorage(todos.value);
 
-    fetch(`${API_URL}/todos`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(newTodo),
-    })
-      .then((response) => response.json())
-      .then((data) => console.log('API response:', data))
-      .catch((error) => console.error('API error:', error));
+    todoApi.createTodo(newTodo).catch((err: unknown) => {
+      // Revert on failure
+      todos.value = todos.value.filter((todo) => todo.id !== newTodo.id);
+      error.value = err instanceof Error ? err.message : 'Failed to add todo';
+    });
   }
 
   function updateTodo(id: string, title: string): void {
+    const previousTodos = todos.value;
+
+    // Optimistic update
     todos.value = todos.value.map((todo) =>
       todo.id === id ? { ...todo, title } : todo,
     );
-    saveToLocalStorage(todos.value);
+
+    todoApi.updateTodo(id, { title }).catch((err: unknown) => {
+      todos.value = previousTodos;
+      error.value = err instanceof Error ? err.message : 'Failed to update todo';
+    });
   }
 
   function toggleTodo(id: string): void {
-    todos.value = todos.value.map((todo) =>
-      todo.id === id ? { ...todo, completed: !todo.completed } : todo,
+    const todo = todos.value.find((t) => t.id === id);
+    if (!todo) return;
+
+    const previousTodos = todos.value;
+    const newCompleted = !todo.completed;
+
+    // Optimistic update
+    todos.value = todos.value.map((t) =>
+      t.id === id ? { ...t, completed: newCompleted } : t,
     );
-    saveToLocalStorage(todos.value);
+
+    todoApi.updateTodo(id, { completed: newCompleted }).catch((err: unknown) => {
+      todos.value = previousTodos;
+      error.value = err instanceof Error ? err.message : 'Failed to toggle todo';
+    });
   }
 
   function removeTodo(id: string): void {
+    const previousTodos = todos.value;
+
+    // Optimistic update
     todos.value = todos.value.filter((todo) => todo.id !== id);
-    saveToLocalStorage(todos.value);
+
+    todoApi.deleteTodo(id).catch((err: unknown) => {
+      todos.value = previousTodos;
+      error.value = err instanceof Error ? err.message : 'Failed to remove todo';
+    });
   }
 
   function clearCompleted(): void {
+    const completedTodos = todos.value.filter((todo) => todo.completed);
+    const previousTodos = todos.value;
+
+    // Optimistic update
     todos.value = todos.value.filter((todo) => !todo.completed);
-    saveToLocalStorage(todos.value);
+
+    Promise.all(completedTodos.map((todo) => todoApi.deleteTodo(todo.id))).catch(
+      (err: unknown) => {
+        todos.value = previousTodos;
+        error.value = err instanceof Error ? err.message : 'Failed to clear completed';
+      },
+    );
   }
 
   function setFilter(newFilter: TodoFilter): void {
@@ -93,8 +124,11 @@ export const useTodoStore = defineStore('todo', () => {
   return {
     todos,
     filter,
+    loading,
+    error,
     filteredTodos,
     remainingCount,
+    loadTodos,
     addTodo,
     updateTodo,
     toggleTodo,

@@ -21,10 +21,15 @@
 </template>
 
 <script setup lang="ts">
+import { onMounted } from 'vue';
 import { useTodoStore } from 'src/stores/todo-store';
 import TodoInput from 'src/components/TodoInput.vue';
 import TodoList from 'src/components/TodoList.vue';
 import TodoFilters from 'src/components/TodoFilters.vue';
 
 const todoStore = useTodoStore();
+
+onMounted(() => {
+  todoStore.loadTodos();
+});
 </script>
