@@ -4,6 +4,7 @@ import type { ITodo } from 'src/domain/todo';
 import { TodoFilter } from 'src/domain/todo';
 
 const STORAGE_KEY = 'todos';
+const API_URL = 'https://3nio1igy4g.execute-api.eu-west-2.amazonaws.com';
 
 function loadFromLocalStorage(): ITodo[] {
   try {
@@ -50,6 +51,15 @@ export const useTodoStore = defineStore('todo', () => {
 
     todos.value = [...todos.value, newTodo];
     saveToLocalStorage(todos.value);
+
+    fetch(`${API_URL}/todos`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newTodo),
+    })
+      .then((response) => response.json())
+      .then((data) => console.log('API response:', data))
+      .catch((error) => console.error('API error:', error));
   }
 
   function updateTodo(id: string, title: string): void {
