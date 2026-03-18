@@ -1,6 +1,6 @@
 # TODO List Application
 
-A TODO list application built with **Quasar v2** (Vue 3), **TypeScript**, **Pinia**, and **Cypress**, backed by a [Serverless REST API](https://github.com/ianaquino47/todo-api) with DynamoDB persistence.
+A TODO list application built with **Quasar v2** (Vue 3), **TypeScript**, **Pinia**, and **Cypress**, backed by a [Serverless REST API](https://github.com/ianaquino47/todo-api) with DynamoDB persistence and MCP integration for AI assistants.
 
 ## Features
 
@@ -12,6 +12,7 @@ A TODO list application built with **Quasar v2** (Vue 3), **TypeScript**, **Pini
 - **Clear completed** TODOs in one click
 - **API-backed persistence** — TODOs are stored in DynamoDB via the todo-api, surviving page reloads and across devices
 - **Optimistic updates** — UI updates instantly, reverts automatically on API failure
+- **AI-accessible** — TODOs can also be managed via Claude through the [MCP server](https://github.com/ianaquino47/todo-api#mcp-server)
 
 ## Tech Stack
 
@@ -22,7 +23,7 @@ A TODO list application built with **Quasar v2** (Vue 3), **TypeScript**, **Pini
 | State | [Pinia](https://pinia.vuejs.org/) |
 | Language | TypeScript |
 | i18n | [vue-i18n](https://vue-i18n.intlify.dev/) (en-GB) |
-| API | [todo-api](https://github.com/ianaquino47/todo-api) (Serverless + DynamoDB) |
+| API | [todo-api](https://github.com/ianaquino47/todo-api) (Serverless + DynamoDB + MCP) |
 | Unit/Component Tests | [Vitest](https://vitest.dev/) + [@vue/test-utils](https://test-utils.vuejs.org/) |
 | E2E Tests | [Cypress](https://www.cypress.io/) |
 
@@ -147,7 +148,7 @@ All user-facing strings use vue-i18n with the `en-GB` locale. Translation keys a
 
 | Repository | Description |
 |------------|-------------|
-| [todo-api](https://github.com/ianaquino47/todo-api) | Serverless REST API with DynamoDB persistence |
+| [todo-api](https://github.com/ianaquino47/todo-api) | Serverless REST API + MCP server with DynamoDB persistence |
 
 ## Licence
 
